@@ -28,7 +28,7 @@ charactersRouter.get("/", async (req, res, next) => {
     values.push(limit, offset);
 
     const result = await pool.query(
-      `SELECT id, game_id, name, slug, rarity, rarity_label, stats, tier, portrait_url
+      `SELECT id, game_id, name, slug, rarity, rarity_label, stats, tier, portrait_url, source_meta
        FROM characters ${where}
        ORDER BY name ASC
        LIMIT $${i++} OFFSET $${i++}`,
@@ -50,7 +50,7 @@ charactersRouter.get("/:id", async (req, res, next) => {
   try {
     const charResult = await pool.query(
       `SELECT id, game_id, name, slug, rarity, rarity_label, stats, strengths, weaknesses,
-              gameplay_notes, tier, release_date, release_version, portrait_url, artwork_url, archived_at
+              gameplay_notes, tier, release_date, release_version, portrait_url, artwork_url, source_meta, archived_at
        FROM characters WHERE id = $1`,
       [req.params.id]
     );
@@ -60,8 +60,14 @@ charactersRouter.get("/:id", async (req, res, next) => {
       `SELECT name, type, description, icon_url FROM character_skills WHERE character_id = $1 ORDER BY sort_order ASC`,
       [req.params.id]
     );
+    const recsResult = await pool.query(
+      `SELECT category, item_name, rank, notes, source_meta
+       FROM character_recommendations WHERE character_id = $1
+       ORDER BY category ASC, rank ASC, item_name ASC`,
+      [req.params.id]
+    );
 
-    res.json({ character: { ...charResult.rows[0], skills: skillsResult.rows } });
+    res.json({ character: { ...charResult.rows[0], skills: skillsResult.rows, recommendations: recsResult.rows } });
   } catch (err) {
     next(err);
   }
