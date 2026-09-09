@@ -7,7 +7,7 @@ export const charactersRouter = Router();
 charactersRouter.get("/", async (req, res, next) => {
   try {
     const { gameId, q, page = "1", pageSize = "24" } = req.query;
-    const limit = Math.min(100, Math.max(1, parseInt(pageSize, 10) || 24));
+    const limit = Math.min(250, Math.max(1, parseInt(pageSize, 10) || 24));
     const offset = (Math.max(1, parseInt(page, 10) || 1) - 1) * limit;
 
     const clauses = ["archived_at IS NULL", "is_visible = true"];

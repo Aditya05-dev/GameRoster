@@ -10,7 +10,8 @@
     "migrate": "node src/db/migrate.js",
     "seed": "node src/db/seed.js",
     "test": "node --test tests/",
-    "seed:genshin": "node src/db/seed-genshin.js"
+    "seed:genshin": "node src/db/seed-genshin.js",
+    "sync:genshin": "node src/db/sync-genshin.js"
   },
   "engines": {
     "node": ">=18.17.0"
