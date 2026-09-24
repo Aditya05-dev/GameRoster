@@ -9,15 +9,20 @@
     "dev": "node --watch src/server.js",
     "migrate": "node src/db/migrate.js",
     "seed": "node src/db/seed.js",
-    "test": "node --test tests/",
+    "test": "node --test tests/*.test.js",
+    "test:unit": "node --test tests/unit/*.test.js",
     "seed:genshin": "node src/db/seed-genshin.js",
-    "sync:genshin": "node src/db/sync-genshin.js"
+    "sync:genshin": "node src/db/sync-genshin.js",
+    "catalog:build": "node scripts/build-catalog.mjs",
+    "test:isolated": "node scripts/isolated-check.mjs",
+    "test:ui": "node scripts/isolated-check.mjs --ui",
+    "format": "prettier --write src/**/*.js tests/**/*.js scripts/*.mjs ../frontend/src/**/*.{js,jsx,css}"
   },
   "engines": {
-    "node": ">=18.17.0"
+    "node": ">=22.17.0"
   },
   "dependencies": {
-    "bcrypt": "^5.1.1",
+    "bcrypt": "6.0.0",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
@@ -29,6 +34,11 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "@electric-sql/pglite-socket": "0.2.11",
+    "genshin-db": "5.2.14",
+    "playwright": "1.62.1",
+    "prettier": "3.8.3",
     "supertest": "^7.0.0"
   }
 }

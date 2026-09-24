@@ -1,99 +1,209 @@
-import "dotenv/config";
 import { pool } from "./pool.js";
-import { SOURCE, characters, equipment, materials, domains, recommendations } from "./content/genshin.v1.js";
-
-async function getGame(client) {
-  const r = await client.query(`SELECT id FROM games WHERE slug='genshin-impact' LIMIT 1`);
-  if (!r.rowCount) throw new Error("Genshin Impact game row is missing. Run npm run seed first.");
-  return r.rows[0].id;
-}
-
-async function seedCharacters(client, gameId) {
-  const ids = new Map();
-  for (const c of characters) {
-    const result = await client.query(
-      `INSERT INTO characters (game_id,name,slug,rarity,stats,strengths,weaknesses,gameplay_notes,release_version,source_meta,is_visible)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true)
-       ON CONFLICT (game_id,slug) DO UPDATE SET
-         name=EXCLUDED.name, rarity=EXCLUDED.rarity, stats=EXCLUDED.stats, strengths=EXCLUDED.strengths,
-         weaknesses=EXCLUDED.weaknesses, gameplay_notes=EXCLUDED.gameplay_notes,
-         release_version=EXCLUDED.release_version, source_meta=EXCLUDED.source_meta,
-         archived_at=NULL, is_visible=true, updated_at=now()
-       RETURNING id`,
-      [gameId,c.name,c.slug,c.rarity,c.stats,c.strengths,c.weaknesses,c.gameplayNotes,c.releaseVersion,SOURCE]
-    );
-    const id = result.rows[0].id;
-    ids.set(c.slug,id);
-    await client.query(`DELETE FROM character_skills WHERE character_id=$1`,[id]);
-    for (const [idx,s] of c.skills.entries()) {
-      await client.query(`INSERT INTO character_skills(character_id,name,type,description,sort_order) VALUES($1,$2,$3,$4,$5)`,[id,s.name,s.type,s.description,idx]);
-    }
-  }
-  return ids;
-}
-
-async function seedEquipment(client, gameId) {
-  for (const [kind,name,rarity,stats,effectText] of equipment) {
-    await client.query(
-      `INSERT INTO equipment(game_id,kind,name,rarity,stats,effect_text,source_meta)
-       VALUES($1,$2,$3,$4,$5,$6,$7)
-       ON CONFLICT (game_id,kind,name) DO UPDATE SET rarity=EXCLUDED.rarity,stats=EXCLUDED.stats,effect_text=EXCLUDED.effect_text,source_meta=EXCLUDED.source_meta,archived_at=NULL`,
-      [gameId,kind,name,rarity,stats,effectText,SOURCE]
-    );
-  }
-}
-
-async function seedMaterials(client, gameId) {
-  for (const [name,category,rarity,sources] of materials) {
-    await client.query(
-      `INSERT INTO materials(game_id,name,category,rarity,source_locations,source_meta)
-       VALUES($1,$2,$3,$4,$5,$6)
-       ON CONFLICT (game_id,name) DO UPDATE SET category=EXCLUDED.category,rarity=EXCLUDED.rarity,source_locations=EXCLUDED.source_locations,source_meta=EXCLUDED.source_meta`,
-      [gameId,name,category,rarity,sources,SOURCE]
-    );
-  }
-}
-
-async function seedDomains(client, gameId) {
-  for (const [kind,name,location,difficulty,days,drops] of domains) {
-    await client.query(
-      `INSERT INTO domains_stages(game_id,kind,name,location,difficulty,available_days,drops,source_meta)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8)
-       ON CONFLICT (game_id,kind,name) DO UPDATE SET location=EXCLUDED.location,difficulty=EXCLUDED.difficulty,available_days=EXCLUDED.available_days,drops=EXCLUDED.drops,source_meta=EXCLUDED.source_meta`,
-      [gameId,kind,name,location,difficulty,days,drops,SOURCE]
-    );
-  }
-}
-
-async function seedRecommendations(client, ids) {
-  const editorialSource={...SOURCE,recommendationType:"editorial starter guidance",metaSensitive:true};
-  for (const [slug,rows] of Object.entries(recommendations)) {
-    const characterId=ids.get(slug);
-    if(!characterId) continue;
-    for (const [category,itemName,rank,notes] of rows) {
-      await client.query(
-        `INSERT INTO character_recommendations(character_id,category,item_name,rank,notes,source_meta)
-         VALUES($1,$2,$3,$4,$5,$6)
-         ON CONFLICT(character_id,category,item_name) DO UPDATE SET rank=EXCLUDED.rank,notes=EXCLUDED.notes,source_meta=EXCLUDED.source_meta,updated_at=now()`,
-        [characterId,category,itemName,rank,notes,editorialSource]
-      );
-    }
-  }
-}
-
-async function run(){
-  const client=await pool.connect();
-  try{
+import { importCatalog } from "../services/catalogImport.js";
+import {
+  characters as starterCharacters,
+  recommendations as starterRecommendations,
+} from "./content/genshin.v1.js";
+const curated = {
+  skirk: {
+    url: "https://keqingmains.com/q/skirk-quickguide/",
+    version: "5.7",
+    rows: [
+      ["weapon", "Azurelight", 1, "Signature option for both playstyles."],
+      [
+        "weapon",
+        "Primordial Jade Cutter",
+        2,
+        "Alternative; watch CRIT Rate overcapping with Marechaussee.",
+      ],
+      ["weapon", "Mistsplitter Reforged", 3, "Alternative if already owned."],
+      [
+        "weapon",
+        "Finale of the Deep",
+        1,
+        "Craftable option. Bring a healer to clear its Bond of Life.",
+      ],
+      [
+        "weapon",
+        "Calamity of Eshu",
+        2,
+        "Event weapon for on-field play; requires a shield.",
+      ],
+      [
+        "artifact_set",
+        "Finale of the Deep Galleries",
+        1,
+        "Flexible set for on-field or Burst-focused play.",
+      ],
+      [
+        "artifact_set",
+        "Marechaussee Hunter",
+        2,
+        "For on-field Furina teams; account for its conditional CRIT Rate.",
+      ],
+      [
+        "main_stats",
+        "ATK% / Cryo DMG or ATK% / CRIT",
+        1,
+        "Balance main stats with your team’s buffs.",
+      ],
+      ["substats", "CRIT and ATK%", 1, "Avoid overcapping CRIT Rate."],
+      [
+        "talent_priority",
+        "Skill → Burst",
+        1,
+        "On-field priority; prioritize Burst for quickswap.",
+      ],
+      [
+        "team_note",
+        "Hydro and Cryo teammates",
+        1,
+        "Escoffier, Hydro support, and a Hydro/Cryo flex.",
+      ],
+    ],
+  },
+  furina: {
+    url: "https://keqingmains.com/q/furina-quickguide/",
+    version: "Guide reference",
+    rows: [
+      [
+        "weapon",
+        "Splendor of Tranquil Waters",
+        1,
+        "Personal-damage option once Energy Recharge needs are met.",
+      ],
+      [
+        "weapon",
+        "Key of Khaj-Nisut",
+        2,
+        "Consider for teams that benefit from its EM buff.",
+      ],
+      [
+        "weapon",
+        "Fleuve Cendre Ferryman",
+        1,
+        "Fishing reward with useful Energy Recharge.",
+      ],
+      [
+        "weapon",
+        "Favonius Sword",
+        2,
+        "Prioritizes team Energy needs over personal damage.",
+      ],
+      [
+        "weapon",
+        "Festering Desire",
+        3,
+        "Strong option if you own this past event reward.",
+      ],
+      ["artifact_set", "Golden Troupe", 1, "For off-field Skill damage."],
+      [
+        "main_stats",
+        "HP% or ER / HP% or Hydro / CRIT",
+        1,
+        "Meet the rotation’s Energy needs first; Goblet choice depends on investment.",
+      ],
+      [
+        "substats",
+        "ER until sufficient → CRIT / HP%",
+        1,
+        "Energy requirements change with team and rotation.",
+      ],
+      [
+        "team_note",
+        "Include reliable healing",
+        1,
+        "Teamwide healing helps maintain health and build Fanfare.",
+      ],
+    ],
+  },
+};
+try {
+  console.log(await importCatalog(pool));
+  const {
+    rows: [game],
+  } = await pool.query("SELECT id FROM games WHERE slug='genshin-impact'");
+  const client = await pool.connect();
+  try {
     await client.query("BEGIN");
-    const gameId=await getGame(client);
-    const ids=await seedCharacters(client,gameId);
-    await seedEquipment(client,gameId);
-    await seedMaterials(client,gameId);
-    await seedDomains(client,gameId);
-    await seedRecommendations(client,ids);
+    for (const c of starterCharacters)
+      await client.query(
+        `UPDATE characters SET gameplay_notes=coalesce(gameplay_notes,$3),strengths=CASE WHEN cardinality(strengths)=0 THEN $4 ELSE strengths END,weaknesses=CASE WHEN cardinality(weaknesses)=0 THEN $5 ELSE weaknesses END,stats=CASE WHEN stats?'role' THEN stats ELSE stats||$6::jsonb END WHERE game_id=$1 AND slug=$2`,
+        [
+          game.id,
+          c.slug,
+          c.gameplayNotes,
+          c.strengths,
+          c.weaknesses,
+          { role: c.stats.role },
+        ],
+      );
+    for (const [slug, rows] of Object.entries(starterRecommendations)) {
+      if (curated[slug]) continue;
+      const {
+        rows: [character],
+      } = await client.query(
+        "SELECT id FROM characters WHERE game_id=$1 AND slug=$2",
+        [game.id, slug],
+      );
+      if (!character) continue;
+      for (const [category, name, rank, notes] of rows)
+        await client.query(
+          `INSERT INTO character_recommendations(character_id,category,item_name,rank,notes,source_meta,equipment_id) VALUES($1,$2,$3,$4,$5,$6,(SELECT id FROM equipment WHERE game_id=$7 AND kind=$2 AND name=$3 LIMIT 1)) ON CONFLICT(character_id,category,item_name) DO NOTHING`,
+          [
+            character.id,
+            category,
+            name,
+            rank,
+            notes,
+            {
+              recommendationType: "Legacy editorial starter guidance",
+              pack: "genshin-v1",
+            },
+            game.id,
+          ],
+        );
+    }
+    for (const [slug, guide] of Object.entries(curated)) {
+      const {
+        rows: [c],
+      } = await client.query(
+        "SELECT id FROM characters WHERE game_id=$1 AND slug=$2",
+        [game.id, slug],
+      );
+      if (!c) continue;
+      for (const [category, name, rank, notes] of guide.rows)
+        await client.query(
+          `INSERT INTO character_recommendations(character_id,category,item_name,rank,notes,source_meta,equipment_id) VALUES($1,$2,$3,$4,$5,$6,(SELECT id FROM equipment WHERE game_id=$7 AND kind=$2 AND name=$3 LIMIT 1)) ON CONFLICT(character_id,category,item_name) DO NOTHING`,
+          [
+            c.id,
+            category,
+            name,
+            rank,
+            notes,
+            {
+              url: guide.url,
+              version: guide.version,
+              recommendationType: "Guide-based starter selection",
+              reviewedOn: "2026-09-23",
+            },
+            game.id,
+          ],
+        );
+    }
     await client.query("COMMIT");
-    console.log(`Genshin content pack installed: ${characters.length} characters, ${equipment.length} equipment/artifact entries, ${materials.length} materials, ${domains.length} domains.`);
-    console.log("The pack is idempotent: run npm run seed:genshin again after future content updates.");
-  }catch(err){await client.query("ROLLBACK");throw err}finally{client.release();await pool.end()}
+    console.log(
+      "Starter guidance installed without overwriting existing editorial changes.",
+    );
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
+} catch (e) {
+  console.error(e.message);
+  process.exitCode = 1;
+} finally {
+  await pool.end();
 }
-run().catch(err=>{console.error(err);process.exit(1)});

@@ -1,23 +1,112 @@
-import React,{useEffect,useMemo,useState}from"react";
-import{Link,useParams}from"react-router-dom";
-import{api}from"../lib/api";
-import{Badge,Card,Empty,Field}from"../components/UI";
-
-function CatalogImage({src,alt,className="catalogThumb"}){
-  if(!src)return <div className={`${className} imageFallback`}>{alt?.[0]||"?"}</div>;
-  return <img className={className} src={src} alt={alt} loading="lazy" onError={e=>{e.currentTarget.style.visibility="hidden"}}/>;
-}
-
-export default function GameDetail(){
-  const{slug}=useParams();
-  const[game,setGame]=useState(null),[characters,setCharacters]=useState([]),[domains,setDomains]=useState([]),[equipment,setEquipment]=useState([]),[materials,setMaterials]=useState([]),[q,setQ]=useState(""),[gearQ,setGearQ]=useState(""),[gearKind,setGearKind]=useState("all");
-  useEffect(()=>{api.get(`/games/${slug}`,{auth:false}).then(async r=>{setGame(r.game);const[c,d,e,m]=await Promise.all([api.get(`/characters?gameId=${r.game.id}&pageSize=250`,{auth:false}),api.get(`/catalog/domains?gameId=${r.game.id}`,{auth:false}),api.get(`/catalog/equipment?gameId=${r.game.id}`,{auth:false}),api.get(`/catalog/materials?gameId=${r.game.id}`,{auth:false})]);setCharacters(c.characters||[]);setDomains(d.domains||[]);setEquipment(e.equipment||[]);setMaterials(m.materials||[])})},[slug]);
-  const shown=useMemo(()=>characters.filter(c=>c.name.toLowerCase().includes(q.toLowerCase())),[characters,q]);
-  const shownEquipment=useMemo(()=>equipment.filter(e=>(gearKind==="all"||e.kind===gearKind)&&e.name.toLowerCase().includes(gearQ.toLowerCase())),[equipment,gearQ,gearKind]);
-  if(!game)return <div className="section">Loading…</div>;
-  return <section className="section"><div className="titleRow"><div><p className="eyebrow">{game.franchise||"GAME"}</p><h1>{game.name}</h1></div><span className="gameDot large" style={{background:game.accent_color}}/></div><div className="tabsLine"><a href="#characters">Characters</a><a href="#gear">Equipment</a><a href="#materials">Materials</a><a href="#farm">{game.entity_schema?.domainWord||"Farming"}</a><Link to={`/maps?gameId=${game.id}`}>Map</Link></div>
-  <div className="sectionHeading"><h2 id="characters">Characters</h2><span className="muted">{shown.length} shown • {characters.length} total</span></div><Field label="Search roster" placeholder="Type a character name" value={q} onChange={e=>setQ(e.target.value)}/>{shown.length?<div className="grid chars">{shown.map(c=><Link to={`/characters/${c.id}`} key={c.id}><Card className="characterCard"><div className="characterCardImage"><CatalogImage src={c.portrait_url} alt={c.name} className="characterPortrait"/></div><div className="titleRow"><h3>{c.name}</h3>{c.tier&&<Badge>{c.tier} Tier</Badge>}</div><p>{[c.stats?.element,c.stats?.weaponType,c.stats?.role,c.stats?.region].filter(Boolean).join(" • ")}</p></Card></Link>)}</div>:<Empty title="No reviewed characters" body="No characters match this search."/>}
-  <div className="sectionHeading"><h2 id="gear">Equipment & artifact sets</h2><span className="muted">{shownEquipment.length} shown • {equipment.length} total</span></div><div className="catalogFilters"><Field label="Search equipment" placeholder="Weapon or artifact name" value={gearQ} onChange={e=>setGearQ(e.target.value)}/><label className="field"><span>Type</span><select value={gearKind} onChange={e=>setGearKind(e.target.value)}><option value="all">All equipment</option><option value="weapon">Weapons</option><option value="artifact_set">Artifact sets</option></select></label></div>{shownEquipment.length?<div className="resourceGrid">{shownEquipment.map(e=><Card key={e.id} className="equipmentCard"><div className="equipmentTop"><CatalogImage src={e.portrait_url} alt={e.name}/><div><div className="titleRow"><h3>{e.name}</h3>{e.rarity&&<Badge>{e.rarity}★</Badge>}</div><p>{e.kind.replaceAll("_"," ")}{e.stats?.weaponType?` • ${e.stats.weaponType}`:""}{e.stats?.secondaryStat?` • ${e.stats.secondaryStat}`:""}</p></div></div>{e.stats?.twoPiece&&<small>2-piece: {e.stats.twoPiece}</small>}{e.effect_text&&<small className="blockNote">{e.effect_text}</small>}</Card>)}</div>:<Empty title="No equipment found" body="No equipment matches the current filters."/>}
-  <h2 id="materials">Materials</h2>{materials.length?<div className="resourceGrid">{materials.map(m=><Card key={m.id}><div className="titleRow"><h3>{m.name}</h3>{m.rarity&&<Badge>{m.rarity}★</Badge>}</div><p>{m.category||"Material"}</p>{m.source_locations?.length&&<small>{m.source_locations.join(" • ")}</small>}</Card>)}</div>:<Empty title="No materials yet" body="Reviewed materials have not been added for this game."/>}
-  <h2 id="farm">{game.entity_schema?.domainWord||"Farming"}</h2>{domains.length?<div className="list">{domains.map(d=><Card key={d.id}><b>{d.name}</b><p>{d.location||""} {d.available_days?.length?`• ${d.available_days.join(", ")}`:""}</p><small>{d.drops}</small></Card>)}</div>:<Empty title="No farming locations yet" body="Add reviewed domains/stages through the backend."/>}</section>
+import React from "react";
+import { Link, useOutletContext } from "react-router-dom";
+import {
+  Users,
+  Swords,
+  Gem,
+  Compass,
+  CalendarDays,
+  BookOpen,
+} from "lucide-react";
+import { useApi } from "../lib/hooks";
+import { Card } from "../components/UI";
+export default function GameDetail() {
+  const { game } = useOutletContext();
+  const { data } = useApi(
+    game.slug === "genshin-impact" ? "/catalog/status" : null,
+  );
+  const counts = data?.latest?.counts;
+  return (
+    <>
+      <div className="worldHero">
+        <div>
+          <p className="eyebrow">
+            {game.slug === "genshin-impact"
+              ? "YOUR COMPANION IN TEYVAT"
+              : "YOUR GAME COMPANION"}
+          </p>
+          <h2>
+            A little planning.
+            <br />A whole world to explore.
+          </h2>
+          <p>
+            Find your next character, refine a build, and make every day of
+            farming count.
+          </p>
+          <Link className="btn primary" to={`/games/${game.slug}/characters`}>
+            Explore characters →
+          </Link>
+          {game.slug === "genshin-impact" && (
+            <Link className="btn ghost" to="/lookup">
+              View my showcase
+            </Link>
+          )}
+        </div>
+        <div className="orbital" aria-hidden="true">
+          <span>✧</span>
+        </div>
+      </div>
+      <div className="sectionHeading">
+        <h2>Your adventure toolkit</h2>
+        <span className="muted">One place for every step</span>
+      </div>
+      <div className="toolGrid">
+        {[
+          [
+            "characters",
+            "Characters",
+            "Discover kits, talents, and progression.",
+            Users,
+            counts?.characters,
+          ],
+          [
+            "equipment",
+            "Weapons & equipment",
+            "Find the tools that fit your playstyle.",
+            Swords,
+            counts?.equipment,
+          ],
+          [
+            "materials",
+            "Materials",
+            "Know what you need and where to find it.",
+            Gem,
+            counts?.materials,
+          ],
+          [
+            "domains",
+            "Domain schedule",
+            "Plan around daily material rotations.",
+            CalendarDays,
+            counts?.domains,
+          ],
+          [
+            "map",
+            "Explore the map",
+            "Filter locations and track your collection.",
+            Compass,
+          ],
+          ["guides", "Guides", "Read published community knowledge.", BookOpen],
+        ].map(([path, title, description, Icon, count]) => (
+          <Link to={`/games/${game.slug}/${path}`} key={path}>
+            <Card className="toolCard">
+              <Icon />
+              <span className="toolCount">{count || "↗"}</span>
+              <h3>{title}</h3>
+              <p>{description}</p>
+            </Card>
+          </Link>
+        ))}
+      </div>
+      {data?.latest && (
+        <p className="sourceNote">
+          Catalog snapshot: {data.latest.source_meta.provider}{" "}
+          {data.latest.source_meta.packageVersion} · Imported{" "}
+          {new Date(data.latest.imported_at).toLocaleDateString()}. Provider
+          entries may include upcoming content; version labels are not verified
+          release dates.
+        </p>
+      )}
+    </>
+  );
 }

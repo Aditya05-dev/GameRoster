@@ -1,0 +1,2 @@
+import React from"react";import{NavLink}from"react-router-dom";
+export default function GenshinNav(){const base="/games/genshin-impact";return <nav className="gameSubnav" aria-label="Genshin sections"><NavLink to={`${base}/characters`}>Characters</NavLink><NavLink to={`${base}/equipment`}>Equipment</NavLink><NavLink to={`${base}/materials`}>Materials</NavLink><NavLink to={`${base}/domains`}>Domains</NavLink><NavLink to={`${base}/map`}>Map</NavLink></nav>}

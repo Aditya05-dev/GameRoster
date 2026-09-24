@@ -23,27 +23,49 @@ import { mapsRouter } from "./routes/maps.routes.js";
 import { profileLookupRouter } from "./routes/profileLookup.routes.js";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
 
+import { adminCatalogRouter } from "./routes/adminCatalog.routes.js";
+import { companionRouter } from "./routes/companion.routes.js";
+import { assetsRouter } from "./routes/assets.routes.js";
 export const app = express();
 
 app.set("trust proxy", 1); // needed on Railway/Render/etc. for correct rate-limit IPs behind a proxy
 
 app.use(helmet());
-app.use(cors({
-  origin: process.env.CORS_ORIGIN?.split(",") || true,
-  credentials: true,
-}));
+app.use(
+  cors({
+    origin: process.env.CORS_ORIGIN?.split(",") || true,
+    credentials: true,
+  }),
+);
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 
 // Generous global limit against abuse; auth routes get a tighter one below
 // since credential-stuffing/enumeration attempts target those specifically.
-app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 600, standardHeaders: true, legacyHeaders: false }));
+app.use(
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 600,
+    standardHeaders: true,
+    legacyHeaders: false,
+  }),
+);
 
-const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false, message: { error: "Too many attempts. Try again later." } });
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many attempts. Try again later." },
+});
 
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 
-app.use("/api/auth", authLimiter, authRouter);
+app.use(
+  ["/api/auth/login", "/api/auth/signup", "/api/auth/forgot-password"],
+  authLimiter,
+);
+app.use("/api/auth", authRouter);
 app.use("/api/users", usersRouter);
 app.use("/api/games", gamesRouter);
 app.use("/api/characters", charactersRouter);
@@ -52,6 +74,7 @@ app.use("/api/teams", teamsRouter);
 app.use("/api/favorites", favoritesRouter);
 app.use("/api/farming-plans", farmingRouter);
 app.use("/api/notifications", notificationsRouter);
+app.use("/api/admin/content", adminCatalogRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/catalog", catalogRouter);
 app.use("/api/guides", guidesRouter);
@@ -60,8 +83,9 @@ app.use("/api/social", socialRouter);
 app.use("/api/maps", mapsRouter);
 app.use("/api/profile-lookup", profileLookupRouter);
 
+app.use("/api/companion", companionRouter);
+app.use("/api/assets", assetsRouter);
 app.use(notFoundHandler);
 app.use(errorHandler);
-
 
 export default app;

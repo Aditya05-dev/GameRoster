@@ -18,12 +18,17 @@ usersRouter.get("/search", async (req, res, next) => {
        WHERE (u.username ILIKE $1 OR u.user_id_public ILIKE $1) AND u.is_active = true
        ORDER BY u.username ASC
        LIMIT 20`,
-      [`%${q}%`]
+      [`%${q}%`],
     );
     res.json({
       results: result.rows
         .filter((r) => r.visibility !== "private")
-        .map((r) => ({ id: r.id, userIdPublic: r.user_id_public, username: r.username, avatarUrl: r.avatar_url })),
+        .map((r) => ({
+          id: r.id,
+          userIdPublic: r.user_id_public,
+          username: r.username,
+          avatarUrl: r.avatar_url,
+        })),
     });
   } catch (err) {
     next(err);
@@ -38,18 +43,29 @@ usersRouter.get("/:username", optionalAuth, async (req, res, next) => {
               p.bio, p.avatar_url, p.visibility, p.favorite_game_id
        FROM users u LEFT JOIN profiles p ON p.user_id = u.id
        WHERE u.username = $1 AND u.is_active = true`,
-      [req.params.username]
+      [req.params.username],
     );
-    if (result.rowCount === 0) return res.status(404).json({ error: "User not found." });
+    if (result.rowCount === 0)
+      return res.status(404).json({ error: "User not found." });
     const profile = result.rows[0];
     const isOwner = req.user?.id === profile.id;
-    if (profile.visibility === "private" && !isOwner && req.user?.role !== "admin") {
+    if (
+      profile.visibility === "private" &&
+      !isOwner &&
+      req.user?.role !== "admin"
+    ) {
       return res.status(403).json({ error: "This profile is private." });
     }
 
     const [builds, teams] = await Promise.all([
-      pool.query(`SELECT id, title, build_type, character_id, game_id FROM builds WHERE user_id = $1 AND visibility = 'public'`, [profile.id]),
-      pool.query(`SELECT id, name, character_ids, game_id FROM teams WHERE user_id = $1 AND visibility = 'public'`, [profile.id]),
+      pool.query(
+        `SELECT id, title, build_type, character_id, game_id FROM builds WHERE user_id = $1 AND visibility = 'public'`,
+        [profile.id],
+      ),
+      pool.query(
+        `SELECT id, name, character_ids, game_id FROM teams WHERE user_id = $1 AND visibility = 'public'`,
+        [profile.id],
+      ),
     ]);
 
     res.json({
@@ -71,6 +87,7 @@ usersRouter.get("/:username", optionalAuth, async (req, res, next) => {
 
 // ---- PATCH /api/users/me/profile ----
 const profileSchema = z.object({
+  gameServer: z.enum(["Asia", "Europe", "America", "TW/HK/MO"]).optional(),
   bio: z.string().max(500).optional(),
   avatarUrl: z.string().url().optional().or(z.literal("")),
   visibility: z.enum(["public", "private"]).optional(),
@@ -84,17 +101,25 @@ usersRouter.patch("/me/profile", requireAuth, async (req, res, next) => {
     const values = [];
     let i = 1;
     for (const [key, col] of [
-      ["bio", "bio"], ["avatarUrl", "avatar_url"], ["visibility", "visibility"],
-      ["notifyNewCharacters", "notify_new_characters"], ["favoriteGameId", "favorite_game_id"],
+      ["gameServer", "game_server"],
+      ["bio", "bio"],
+      ["avatarUrl", "avatar_url"],
+      ["visibility", "visibility"],
+      ["notifyNewCharacters", "notify_new_characters"],
+      ["favoriteGameId", "favorite_game_id"],
     ]) {
       if (patch[key] !== undefined) {
         fields.push(`${col} = $${i++}`);
         values.push(patch[key]);
       }
     }
-    if (fields.length === 0) return res.status(400).json({ error: "No fields to update." });
+    if (fields.length === 0)
+      return res.status(400).json({ error: "No fields to update." });
     values.push(req.user.id);
-    await pool.query(`UPDATE profiles SET ${fields.join(", ")}, updated_at = now() WHERE user_id = $${i}`, values);
+    await pool.query(
+      `UPDATE profiles SET ${fields.join(", ")}, updated_at = now() WHERE user_id = $${i}`,
+      values,
+    );
     res.status(204).end();
   } catch (err) {
     next(err);
@@ -103,17 +128,31 @@ usersRouter.patch("/me/profile", requireAuth, async (req, res, next) => {
 
 // ---- PATCH /api/users/me/username ----
 const usernameChangeSchema = z.object({
-  username: z.string().min(3).max(20).regex(/^[a-zA-Z0-9_]+$/),
+  username: z
+    .string()
+    .min(3)
+    .max(20)
+    .regex(/^[a-zA-Z0-9_]+$/),
 });
 usersRouter.patch("/me/username", requireAuth, async (req, res, next) => {
   try {
     const { username } = usernameChangeSchema.parse(req.body);
-    const reserved = await pool.query("SELECT 1 FROM reserved_usernames WHERE name = lower($1)", [username]);
-    if (reserved.rowCount > 0) return res.status(422).json({ error: "That username is reserved." });
+    const reserved = await pool.query(
+      "SELECT 1 FROM reserved_usernames WHERE name = lower($1)",
+      [username],
+    );
+    if (reserved.rowCount > 0)
+      return res.status(422).json({ error: "That username is reserved." });
     try {
-      await pool.query(`UPDATE users SET username = $1, updated_at = now() WHERE id = $2`, [username, req.user.id]);
+      await pool.query(
+        `UPDATE users SET username = $1, updated_at = now() WHERE id = $2`,
+        [username, req.user.id],
+      );
     } catch (err) {
-      if (err.code === "23505") return res.status(409).json({ error: `"${username}" is already taken.` });
+      if (err.code === "23505")
+        return res
+          .status(409)
+          .json({ error: `"${username}" is already taken.` });
       throw err;
     }
     // Note: the permanent user_id_public is untouched — it never changes.
@@ -126,8 +165,14 @@ usersRouter.patch("/me/username", requireAuth, async (req, res, next) => {
 // ---- DELETE /api/users/me ----  (deactivate, not hard-delete — preserves referential integrity of public content)
 usersRouter.delete("/me", requireAuth, async (req, res, next) => {
   try {
-    await pool.query(`UPDATE users SET is_active = false, updated_at = now() WHERE id = $1`, [req.user.id]);
-    await pool.query(`UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`, [req.user.id]);
+    await pool.query(
+      `UPDATE users SET is_active = false, updated_at = now() WHERE id = $1`,
+      [req.user.id],
+    );
+    await pool.query(
+      `UPDATE sessions SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`,
+      [req.user.id],
+    );
     res.status(204).end();
   } catch (err) {
     next(err);

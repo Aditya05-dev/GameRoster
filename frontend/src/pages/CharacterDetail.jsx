@@ -1,33 +1,313 @@
-import React,{useEffect,useMemo,useState}from"react";
-import{useParams}from"react-router-dom";
-import{api}from"../lib/api";
-import{Badge,Card,Empty}from"../components/UI";
-
-const LABELS={weapon:"Recommended weapons",artifact_set:"Artifact sets",main_stats:"Main stats",substats:"Substats",talent_priority:"Talent priority",team_note:"Team notes"};
-const normalize=s=>(s||"").trim().toLowerCase();
-
-function GearImage({src,alt}){
-  if(!src)return null;
-  return <img className="recWeaponImage" src={src} alt={alt} loading="lazy" onError={e=>{e.currentTarget.style.display="none"}}/>;
+import React from "react";
+import { Link, useParams, useSearchParams } from "react-router-dom";
+import { useApi, elementColors } from "../lib/hooks";
+import { safeLink } from "../lib/api";
+import { useAuth } from "../lib/AuthContext";
+import {
+  Card,
+  Badge,
+  Image,
+  Loading,
+  ErrorNotice,
+  Empty,
+  BackLink,
+} from "../components/UI";
+import RosterEditor from "../components/RosterEditor";
+import AscensionCalculator from "../components/AscensionCalculator";
+const skillLabels = {
+  combat1: "Normal attack",
+  combat2: "Elemental skill",
+  combat3: "Elemental burst",
+  passive1: "Ascension passive",
+  passive2: "Ascension passive",
+  passive3: "Utility passive",
+};
+function Recommendation({ row }) {
+  return (
+    <div className={`itemRow ${row.equipment_id ? "" : "textOnly"}`}>
+      {row.equipment_id && <Image src={row.portrait_url} alt={row.item_name} />}
+      <span>
+        {row.equipment_id ? (
+          <Link to={`/catalog/equipment/${row.equipment_id}`}>
+            <b>{row.item_name}</b>
+          </Link>
+        ) : (
+          <b>{row.item_name}</b>
+        )}
+        <small>{row.notes}</small>
+        {safeLink(row.source_meta?.url) && (
+          <a
+            className="sourceNote"
+            target="_blank"
+            rel="noreferrer"
+            href={row.source_meta.url}
+          >
+            Guide reference ↗
+          </a>
+        )}
+      </span>
+    </div>
+  );
 }
-
-export default function CharacterDetail(){
-  const{id}=useParams();
-  const[c,setC]=useState(null),[builds,setBuilds]=useState([]),[equipment,setEquipment]=useState([]);
-  useEffect(()=>{
-    api.get(`/characters/${id}`,{auth:false}).then(async r=>{setC(r.character);try{const e=await api.get(`/catalog/equipment?gameId=${r.character.game_id}`,{auth:false});setEquipment(e.equipment||[])}catch{setEquipment([])}});
-    api.get(`/builds?characterId=${id}`,{auth:false}).then(r=>setBuilds(r.builds||[])).catch(()=>{});
-  },[id]);
-  const grouped=useMemo(()=>{const out={};for(const r of c?.recommendations||[])(out[r.category]??=[]).push(r);return out},[c]);
-  const equipmentByName=useMemo(()=>new Map(equipment.map(e=>[normalize(e.name),e])),[equipment]);
-  const compatibleWeapons=useMemo(()=>{const type=normalize(c?.stats?.weaponType);if(!type)return[];return equipment.filter(e=>e.kind==="weapon"&&normalize(e.stats?.weaponType)===type).sort((a,b)=>(Number(b.rarity)||0)-(Number(a.rarity)||0)||a.name.localeCompare(b.name))},[equipment,c]);
-  if(!c)return <section className="section">Loading…</section>;
-  return <section className="section">
-    <div className="characterHero"><div><p className="eyebrow">CHARACTER</p><h1>{c.name}</h1><div className="badgeRow">{c.rarity&&<Badge>{c.rarity}★</Badge>}{c.tier&&<Badge>{c.tier} Tier</Badge>}{[c.stats?.element,c.stats?.weaponType,c.stats?.role,c.stats?.region].filter(Boolean).map(v=><Badge key={v}>{v}</Badge>)}</div>{c.source_meta?.provider&&<p className="sourceNote">Catalog data synced from {c.source_meta.provider}{c.source_meta.importedAt?` • ${new Date(c.source_meta.importedAt).toLocaleDateString()}`:""}</p>}</div>{(c.artwork_url||c.portrait_url)&&<img src={c.artwork_url||c.portrait_url} alt={c.name} loading="lazy" onError={e=>{if(c.portrait_url&&e.currentTarget.src!==c.portrait_url)e.currentTarget.src=c.portrait_url;else e.currentTarget.style.display="none"}}/>}</div>
-    <div className="twoCol"><div><h2>Strengths</h2><Card>{c.strengths?.length?<ul>{c.strengths.map(x=><li key={x}>{x}</li>)}</ul>:"No reviewed notes yet."}</Card><h2>Gameplay</h2><Card>{c.gameplay_notes||c.stats?.description||"No reviewed gameplay notes yet."}</Card></div><div><h2>Weaknesses</h2><Card>{c.weaknesses?.length?<ul>{c.weaknesses.map(x=><li key={x}>{x}</li>)}</ul>:"No reviewed notes yet."}</Card><h2>Skills</h2>{c.skills?.length?c.skills.map(s=><Card key={s.id||s.name}><b>{s.name}</b><p>{s.type}</p><small>{s.description}</small></Card>):<Empty title="No skills" body="Skills have not been published yet."/>}</div></div>
-    <h2>Starter build recommendations</h2><p className="muted">Reviewed recommendations are shown where available. They are guidance, not a claim that every item is universally best.</p>
-    {Object.keys(grouped).length?<div className="recommendGrid">{Object.entries(grouped).map(([category,rows])=><Card key={category}><h3>{LABELS[category]||category}</h3><div className="recList">{rows.map(r=>{const gear=category==="weapon"?equipmentByName.get(normalize(r.item_name)):null;return <div className="recRow" key={`${category}-${r.item_name}`}><div className="recItem">{gear&&<GearImage src={gear.portrait_url} alt={gear.name}/>}<div><b>{r.item_name}</b>{r.notes&&<small>{r.notes}</small>}</div></div>{r.rank>0&&<Badge>#{r.rank}</Badge>}</div>})}</div></Card>)}</div>:<Empty title="No reviewed recommendations yet" body="Use the compatible weapon catalog below while reviewed build guidance is being added."/>}
-    {c.stats?.weaponType&&<><div className="sectionHeading"><h2>Compatible {c.stats.weaponType} weapons</h2><span className="muted">{compatibleWeapons.length} in catalog</span></div>{compatibleWeapons.length?<div className="weaponStrip">{compatibleWeapons.map(w=><Card key={w.id} className="weaponMini"><GearImage src={w.portrait_url} alt={w.name}/><div><b>{w.name}</b><small>{w.rarity?`${w.rarity}★`:""}{w.stats?.secondaryStat?` • ${w.stats.secondaryStat}`:""}</small></div></Card>)}</div>:<Empty title="No compatible weapons synced" body="Run the Genshin catalog sync to load the weapon catalog."/>}</>}
-    <h2>Community builds</h2>{builds.length?<div className="list">{builds.map(b=><Card key={b.id}><b>{b.title}</b><p>{b.build_type} • by {b.author_username||"community"}</p></Card>)}</div>:<Empty title="No public builds" body="Be the first to publish one after signing in."/>}
-  </section>
+export default function CharacterDetail() {
+  const { id } = useParams(),
+    { user } = useAuth(),
+    [params, setParams] = useSearchParams(),
+    { data, loading, error, reload } = useApi(`/characters/${id}`);
+  const roster = useApi(user ? "/companion/roster" : null, { auth: true });
+  if (loading) return <Loading />;
+  if (error)
+    return (
+      <section className="section">
+        <ErrorNotice error={error} retry={reload} />
+      </section>
+    );
+  const c = data.character,
+    tab = params.get("tab") || "overview",
+    recs = c.recommendations || [],
+    entry = roster.data?.roster.find((r) => r.character_id === c.id);
+  const grouped = (category) => recs.filter((r) => r.category === category);
+  const weapons = grouped("weapon");
+  return (
+    <section
+      className="section characterDetail"
+      style={{ "--element": elementColors[c.stats?.element] || "#a7badf" }}
+    >
+      <BackLink to="/games/genshin-impact/characters">
+        Character archive
+      </BackLink>
+      <div className="characterHero">
+        <div className="characterHeroCopy">
+          <p className="eyebrow">{c.detail?.title || "CHARACTER ARCHIVE"}</p>
+          <h1>{c.name}</h1>
+          <p className="stars">{"★".repeat(c.rarity || 0)}</p>
+          <div className="badgeRow">
+            {[c.stats?.element, c.stats?.weaponType, c.stats?.role]
+              .filter(Boolean)
+              .map((x) => (
+                <Badge key={x}>{x}</Badge>
+              ))}
+          </div>
+          <p>{c.stats?.description}</p>
+          <small>
+            Source version {c.release_version || "unlisted"} ·{" "}
+            {c.stats?.region || c.detail?.affiliation}
+          </small>
+        </div>
+        <Image
+          src={c.artwork_url || c.portrait_url}
+          alt={c.name}
+          className="characterSplash"
+        />
+      </div>
+      <nav className="tabs detailTabs" aria-label="Character details">
+        {["overview", "build", "talents", "ascension", "lore", "gallery"].map(
+          (t) => (
+            <button
+              key={t}
+              className={t === tab ? "active" : ""}
+              onClick={() => setParams({ tab: t })}
+            >
+              {t}
+            </button>
+          ),
+        )}
+      </nav>
+      {tab === "overview" && (
+        <div className="twoCol">
+          <div>
+            <Card>
+              <h2>At a glance</h2>
+              <p>{c.gameplay_notes || c.stats?.description}</p>
+              {c.detail?.baseStats && (
+                <>
+                  <h3>Base stats at level 90</h3>
+                  <div className="statStrip">
+                    {[
+                      ["HP", c.detail.baseStats.hp],
+                      ["ATK", c.detail.baseStats.attack],
+                      ["DEF", c.detail.baseStats.defense],
+                    ].map(([key, value]) => (
+                      <div key={key}>
+                        <span>{key}</span>
+                        <b>{Math.round(value).toLocaleString()}</b>
+                      </div>
+                    ))}
+                  </div>
+                  <small className="muted">
+                    Character base stats before weapon and artifact bonuses.
+                  </small>
+                </>
+              )}
+            </Card>
+            <Card>
+              <h3>Strengths & considerations</h3>
+              {c.strengths?.length || c.weaknesses?.length ? (
+                <>
+                  <ul>
+                    {c.strengths.map((s) => (
+                      <li key={s}>{s}</li>
+                    ))}
+                  </ul>
+                  <ul className="muted">
+                    {c.weaknesses.map((s) => (
+                      <li key={s}>{s}</li>
+                    ))}
+                  </ul>
+                </>
+              ) : (
+                <p className="muted">
+                  Editorial notes have not been published for this character.
+                </p>
+              )}
+            </Card>
+          </div>
+          <Card>
+            <h2>Your collection</h2>
+            {roster.loading && user ? (
+              <Loading />
+            ) : (
+              <RosterEditor
+                key={`${c.id}-${entry?.updated_at || ""}`}
+                character={c}
+                entry={entry}
+                onSaved={roster.reload}
+              />
+            )}
+            <div className="quickLinks">
+              <Link to={`/characters/${c.id}?tab=ascension`}>
+                Plan an upgrade →
+              </Link>
+              <Link to="/teams">Build a team →</Link>
+              <Link to="/lookup">View a live build →</Link>
+            </div>
+          </Card>
+        </div>
+      )}
+      {tab === "build" && (
+        <>
+          <p className="muted">
+            Context matters: recommendations depend on team, stats, and
+            playstyle. Only editorial selections appear here.
+          </p>
+          {[5, 4].map((rarity) => (
+            <Card key={rarity}>
+              <h2>{rarity}★ weapon recommendations</h2>
+              {weapons.filter((r) => r.rarity === rarity).length ? (
+                weapons
+                  .filter((r) => r.rarity === rarity)
+                  .map((r) => <Recommendation row={r} key={r.id} />)
+              ) : (
+                <p className="muted">
+                  No {rarity}★ recommendations published yet.
+                </p>
+              )}
+            </Card>
+          ))}
+          {weapons.filter((r) => ![4, 5].includes(r.rarity)).length > 0 && (
+            <Card>
+              <h2>Other selected weapons</h2>
+              {weapons
+                .filter((r) => ![4, 5].includes(r.rarity))
+                .map((r) => (
+                  <Recommendation row={r} key={r.id} />
+                ))}
+            </Card>
+          )}
+          <div className="twoCol">
+            {[
+              ["artifact_set", "Artifact sets"],
+              ["main_stats", "Main stats"],
+              ["substats", "Substat priorities"],
+              ["talent_priority", "Talent priorities"],
+              ["team_note", "Team notes"],
+            ].map(([key, label]) => (
+              <Card key={key}>
+                <h2>{label}</h2>
+                {grouped(key).length ? (
+                  grouped(key).map((r) => <Recommendation row={r} key={r.id} />)
+                ) : (
+                  <p className="muted">No published guidance yet.</p>
+                )}
+              </Card>
+            ))}
+          </div>
+        </>
+      )}
+      {tab === "talents" && (
+        <div className="talentGrid">
+          {c.skills.length ? (
+            c.skills.map((s) => (
+              <Card key={s.id}>
+                <div className="itemRow">
+                  <Image src={s.icon_url} alt="" />
+                  <div>
+                    <small>{skillLabels[s.type] || s.type}</small>
+                    <h3>{s.name}</h3>
+                  </div>
+                </div>
+                <p>
+                  {s.description?.split("\n\n")[0]?.slice(0, 250)}
+                  {s.description?.split("\n\n")[0]?.length > 250 ? "…" : ""}
+                </p>
+                <details>
+                  <summary>Read full talent description</summary>
+                  <p className="preserveLines">{s.description}</p>
+                </details>
+              </Card>
+            ))
+          ) : (
+            <Empty
+              title="Talents not yet available"
+              body="A matching talent sheet has not been imported for this character."
+            />
+          )}
+        </div>
+      )}
+      {tab === "ascension" && <AscensionCalculator key={c.id} character={c} />}
+      {tab === "lore" && (
+        <div className="twoCol">
+          <Card>
+            <h2>{c.detail?.title || c.name}</h2>
+            <p>{c.stats?.description}</p>
+            <dl className="definitionList">
+              <dt>Affiliation</dt>
+              <dd>{c.detail?.affiliation || "Unlisted"}</dd>
+              <dt>Birthday</dt>
+              <dd>{c.detail?.birthday || "Unlisted"}</dd>
+              <dt>Constellation</dt>
+              <dd>{c.detail?.constellation || "Unlisted"}</dd>
+            </dl>
+          </Card>
+          <Card>
+            <h2>Voice cast</h2>
+            {Object.entries(c.detail?.voiceActors || {}).map(
+              ([lang, actor]) => (
+                <div className="statLine" key={lang}>
+                  <span>{lang}</span>
+                  <b>{actor}</b>
+                </div>
+              ),
+            )}
+          </Card>
+        </div>
+      )}
+      {tab === "gallery" && (
+        <div className="gallery">
+          {[c.artwork_url, ...(c.detail?.gallery || [])]
+            .filter(Boolean)
+            .map((src) => (
+              <Card key={src}>
+                <Image src={src} alt={`${c.name} artwork`} />
+              </Card>
+            ))}
+        </div>
+      )}
+      <p className="sourceNote">
+        Catalog: {c.source_meta?.provider || "Community entry"}{" "}
+        {c.source_meta?.packageVersion || ""}. Source version labels may include
+        upcoming content. Game artwork and text belong to HoYoverse.
+      </p>
+    </section>
+  );
 }

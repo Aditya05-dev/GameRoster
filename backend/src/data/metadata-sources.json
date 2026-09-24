@@ -1,0 +1,20 @@
+{
+  "retrievedAt": "2026-09-23",
+  "files": [
+    {
+      "file": "enka-characters.json",
+      "url": "https://raw.githubusercontent.com/EnkaNetwork/API-docs/master/store/characters.json",
+      "sha256": "51dbaef256968a41dab3429d60f88f77f29645c4b79bf606fc93d4fbf3be33e4"
+    },
+    {
+      "file": "enka-loc.json",
+      "url": "https://raw.githubusercontent.com/EnkaNetwork/API-docs/master/store/loc.json",
+      "sha256": "5b654fdc706aa5da21813b66a716ba61d47df22869fb4d99a8804063ae7acca0"
+    },
+    {
+      "file": "avatar-levels.json",
+      "url": "https://gitlab.com/Dimbreath/AnimeGameData/-/raw/master/ExcelBinOutput/AvatarLevelExcelConfigData.json",
+      "sha256": "d8bbea771c5d96452c9dc259e8d88c2762d9cbce1244bc428502aba4aff7a634"
+    }
+  ]
+}

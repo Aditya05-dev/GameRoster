@@ -15,10 +15,12 @@ async function run() {
   `);
 
   const applied = new Set(
-    (await pool.query("SELECT name FROM _migrations")).rows.map((r) => r.name)
+    (await pool.query("SELECT name FROM _migrations")).rows.map((r) => r.name),
   );
 
-  const files = readdirSync(migrationsDir).filter((f) => f.endsWith(".sql")).sort();
+  const files = readdirSync(migrationsDir)
+    .filter((f) => f.endsWith(".sql"))
+    .sort();
 
   for (const file of files) {
     if (applied.has(file)) {
@@ -48,4 +50,7 @@ async function run() {
   await pool.end();
 }
 
-run().catch(() => process.exit(1));
+run().catch((error) => {
+  console.error(error.message);
+  process.exit(1);
+});
